@@ -60,7 +60,7 @@ export default function BillParser() {
 
     if (result) {
       // 檢查是否有未知人名
-      if (result.hasUnknownNames) {
+      if (result.hasUnknownNames && result.unknownNames.length > 0) {
         setUnknownNames(result.unknownNames);
         setSelectedNames(result.unknownNames.map(n => n.name)); // 預設全選
         setPendingText(result.text);
