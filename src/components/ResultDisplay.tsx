@@ -11,8 +11,10 @@ import {
   Code,
   useToast,
   Divider,
+  Badge,
+  Flex,
 } from '@chakra-ui/react';
-import { CopyIcon } from '@chakra-ui/icons';
+import { CopyIcon, ArrowForwardIcon } from '@chakra-ui/icons';
 import { useCalculator } from '../hooks/useCalculator';
 import { fmtMoney } from '../core/utils.js';
 
@@ -71,7 +73,9 @@ export default function ResultDisplay() {
               const finalTo = netAmount > 0 ? payer : debtor;
               const finalAmount = Math.abs(netAmount);
 
-              text += `\n${finalFrom} → ${finalTo}  淨額 $${fmtMoney(finalAmount)}\n`;
+              text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+              text += `【${finalFrom}】 → 【${finalTo}】  淨額 $${fmtMoney(finalAmount)}\n`;
+              text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
 
               // 合併雙方的所有項目
               const itemMap = new Map();
@@ -220,6 +224,87 @@ export default function ResultDisplay() {
         {/* 結果顯示 */}
         {resultText ? (
           <Box>
+            {/* 視覺化付款卡片 */}
+            {result && result.directedMap && Object.keys(result.directedMap).length > 0 && (
+              <VStack spacing={4} align="stretch" mb={6}>
+                <Heading size="sm" color="gray.700">💸 誰要付錢給誰</Heading>
+                {(() => {
+                  const processed = new Set();
+                  const paymentCards = [];
+
+                  for (const debtor in result.directedMap) {
+                    for (const payer in result.directedMap[debtor]) {
+                      const key1 = `${debtor}->${payer}`;
+                      const key2 = `${payer}->${debtor}`;
+
+                      if (processed.has(key1) || processed.has(key2)) continue;
+
+                      const detail1 = result.directedMap[debtor]?.[payer];
+                      const detail2 = result.directedMap[payer]?.[debtor];
+                      const amount1 = detail1?.total || 0;
+                      const amount2 = detail2?.total || 0;
+                      const netAmount = amount1 - amount2;
+
+                      if (Math.abs(netAmount) > 0.01) {
+                        const finalFrom = netAmount > 0 ? debtor : payer;
+                        const finalTo = netAmount > 0 ? payer : debtor;
+                        const finalAmount = Math.abs(netAmount);
+
+                        paymentCards.push(
+                          <Box
+                            key={key1}
+                            p={6}
+                            bg="white"
+                            borderRadius="xl"
+                            border="2px solid"
+                            borderColor="gray.200"
+                            _hover={{ borderColor: 'blue.400', shadow: 'lg' }}
+                            transition="all 0.2s"
+                          >
+                            <VStack spacing={3}>
+                              <HStack spacing={4} w="full" justify="center" align="center">
+                                <Box textAlign="center">
+                                  <Text fontSize="xs" color="gray.500" mb={1}>付款人</Text>
+                                  <Text fontSize="xl" fontWeight="bold" color="gray.800">
+                                    {finalFrom}
+                                  </Text>
+                                </Box>
+
+                                <Box>
+                                  <ArrowForwardIcon boxSize={8} color="gray.400" />
+                                </Box>
+
+                                <Box textAlign="center">
+                                  <Text fontSize="xs" color="gray.500" mb={1}>收款人</Text>
+                                  <Text fontSize="xl" fontWeight="bold" color="gray.800">
+                                    {finalTo}
+                                  </Text>
+                                </Box>
+                              </HStack>
+
+                              <Divider />
+
+                              <Box textAlign="center" w="full">
+                                <Text fontSize="xs" color="gray.500" mb={1}>金額</Text>
+                                <Text fontSize="3xl" fontWeight="bold" color="blue.500">
+                                  ${fmtMoney(finalAmount)}
+                                </Text>
+                              </Box>
+                            </VStack>
+                          </Box>
+                        );
+                      }
+
+                      processed.add(key1);
+                      processed.add(key2);
+                    }
+                  }
+
+                  return paymentCards;
+                })()}
+              </VStack>
+            )}
+
             <Code
               display="block"
               whiteSpace="pre-wrap"
