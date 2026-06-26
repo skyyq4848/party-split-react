@@ -9,6 +9,41 @@ export class BillParser {
   }
 
   /**
+   * 檢查文字中是否包含群組引用
+   */
+  hasGroupReference(text) {
+    return /@\S+/.test(text);
+  }
+
+  /**
+   * 解析群組引用，返回成員列表
+   */
+  parseGroupReference(text) {
+    const groups = this.state.state.groups || [];
+    const members = new Set();
+
+    // 找出所有 @群組名
+    const groupMatches = text.match(/@(\S+)/g) || [];
+
+    groupMatches.forEach(match => {
+      const groupName = match.substring(1); // 移除 @
+      const group = groups.find(g => g.name === groupName);
+      if (group && group.members) {
+        group.members.forEach(member => members.add(member));
+      }
+    });
+
+    return Array.from(members);
+  }
+
+  /**
+   * 移除文字中的群組引用標記
+   */
+  removeGroupReferences(text) {
+    return text.replace(/@\S+/g, '').trim();
+  }
+
+  /**
    * 解析文字帳單
    */
   parse(text, options = {}) {
@@ -62,6 +97,23 @@ export class BillParser {
             continue;
           }
         }
+      }
+
+      // 檢查是否包含群組引用
+      if (this.hasGroupReference(raw)) {
+        // 包含群組引用，當作派對費用處理
+        const groupMembers = this.parseGroupReference(raw);
+        const cleanedText = this.removeGroupReferences(raw);
+
+        const partyItem = {
+          cat: currentCategory,
+          item: cleanedText,
+          price: Number(price) || 0,
+          payer: primaryPayer || '',
+          members: groupMembers.length > 0 ? groupMembers : people.slice()
+        };
+        party.push(partyItem);
+        continue;
       }
 
       // 解析個人費用（首字為已知人名或可能的人名）
@@ -145,7 +197,14 @@ export class BillParser {
     if (parts.length < 2) return null;
 
     const person = parts[0].trim();
-    const itemDesc = parts[1].trim();
+    let itemDesc = parts[1].trim();
+
+    // 檢查是否包含群組引用
+    let members = people.slice();
+    if (this.hasGroupReference(itemDesc)) {
+      members = this.parseGroupReference(itemDesc);
+      itemDesc = this.removeGroupReferences(itemDesc);
+    }
 
     // 清理品項描述（移除價格部分）
     const cleanItem = this.cleanItemDescription(itemDesc);
@@ -154,7 +213,7 @@ export class BillParser {
       person: person,
       item: cleanItem,
       price: Number(price) || 0,
-      members: people.slice(),
+      members: members,
       custom: false
     };
   }
@@ -225,6 +284,9 @@ yuna 金蜜歐蕾 $70 中杯 去冰無糖
 --------------- 點心費用 ---------------
 藍天 出 大布丁 167元
 闆娘 出 海鮮大拼盤 500元
-沒角 出 生乳捲 210元`;
+沒角 出 生乳捲 210元
+
+提示：可使用 @群組名 快速引用群組成員
+範例：@朋友群 珍奶 150元`;
   }
 }

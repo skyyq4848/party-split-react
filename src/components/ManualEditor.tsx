@@ -158,6 +158,21 @@ export default function ManualEditor() {
     setRows(newRows);
   };
 
+  // 展開群組引用
+  const expandGroups = (text: string): string => {
+    const groups = state.groups || [];
+    let expandedText = text;
+
+    groups.forEach(group => {
+      // 替換 @群組名 為成員列表
+      const groupPattern = new RegExp(`@${group.name}`, 'g');
+      const membersList = group.members.join(' ');
+      expandedText = expandedText.replace(groupPattern, membersList);
+    });
+
+    return expandedText;
+  };
+
   const handleSave = () => {
     const party: any[] = [];
     const personal: any[] = [];
@@ -176,12 +191,14 @@ export default function ManualEditor() {
       }
 
       const priceVal = parseFloat(row.price) || 0;
-      // 解析分攤對象並去除重複
+
+      // 先展開群組引用，再解析分攤對象並去除重複
+      const expandedMembers = expandGroups(row.membersCsv || '');
       const members = Array.from(new Set(
-        row.membersCsv
-          ?.split(/[,，\s]+/)
+        expandedMembers
+          .split(/[,，\s]+/)
           .map((s) => s.trim())
-          .filter(Boolean) || []
+          .filter(Boolean)
       ));
 
       if (row.type === 'party') {
@@ -416,9 +433,10 @@ export default function ManualEditor() {
           <AlertIcon />
           <VStack align="start" spacing={1} flex={1}>
             <Box>手動輸入每筆費用，彈性更高</Box>
-            <Box>• 派對費用：分攤對象填寫參加人（逗號分隔）</Box>
+            <Box>• 派對費用：分攤對象填寫參加人（逗號分隔）或 @群組名</Box>
             <Box>• 個人費用：分攤對象填寫本人姓名</Box>
             <Box>• 代付費用：第一個為代付人，其餘為分攤成員</Box>
+            <Box>• 群組引用：使用 @群組名 快速引用群組成員</Box>
           </VStack>
         </Alert>
 

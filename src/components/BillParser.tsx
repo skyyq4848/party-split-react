@@ -408,6 +408,7 @@ export default function BillParser() {
             <Box>• 個人費用：小明 珍奶 50元</Box>
             <Box>• 代付：小明 出 披薩 300元</Box>
             <Box>• 派對費用：雞排 80元</Box>
+            <Box>• 群組引用：使用 @群組名 快速引用群組成員</Box>
           </VStack>
         </Alert>
 
