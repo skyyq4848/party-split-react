@@ -13,15 +13,25 @@ import {
   Divider,
   Badge,
   Flex,
+  Collapse,
+  IconButton,
 } from '@chakra-ui/react';
-import { CopyIcon, ArrowForwardIcon } from '@chakra-ui/icons';
+import { CopyIcon, ArrowForwardIcon, ChevronDownIcon, ChevronUpIcon } from '@chakra-ui/icons';
 import { useCalculator } from '../hooks/useCalculator';
 import { fmtMoney } from '../core/utils.js';
 
 export default function ResultDisplay() {
   const { calculate, result, isCalculating, error, clearResult } = useCalculator();
   const [resultText, setResultText] = useState('');
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
   const toast = useToast();
+
+  const toggleCard = (key: string) => {
+    setExpandedCards(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
 
   const handleCalculate = () => {
     const calcResult = calculate();
@@ -250,47 +260,138 @@ export default function ResultDisplay() {
                         const finalTo = netAmount > 0 ? payer : debtor;
                         const finalAmount = Math.abs(netAmount);
 
+                        // 收集明細項目
+                        const itemMap = new Map();
+
+                        // 加入第一方的項目（正數）
+                        if (detail1?.items) {
+                          detail1.items.forEach((item) => {
+                            if (Math.abs(item.amt) > 0.01) {
+                              const key = item.desc;
+                              if (itemMap.has(key)) {
+                                itemMap.set(key, itemMap.get(key) + item.amt);
+                              } else {
+                                itemMap.set(key, item.amt);
+                              }
+                            }
+                          });
+                        }
+
+                        // 加入第二方的項目（負數 - 抵扣）
+                        if (detail2?.items) {
+                          detail2.items.forEach((item) => {
+                            if (Math.abs(item.amt) > 0.01) {
+                              const key = `${item.desc} (抵扣)`;
+                              const amt = -item.amt;
+                              if (itemMap.has(key)) {
+                                itemMap.set(key, itemMap.get(key) + amt);
+                              } else {
+                                itemMap.set(key, amt);
+                              }
+                            }
+                          });
+                        }
+
+                        const isExpanded = expandedCards[key1];
+                        const sortedItems = Array.from(itemMap.entries()).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+
                         paymentCards.push(
                           <Box
                             key={key1}
-                            p={6}
                             bg="white"
                             borderRadius="xl"
                             border="2px solid"
-                            borderColor="gray.200"
-                            _hover={{ borderColor: 'blue.400', shadow: 'lg' }}
+                            borderColor={isExpanded ? 'blue.400' : 'gray.200'}
+                            shadow={isExpanded ? 'lg' : 'sm'}
                             transition="all 0.2s"
+                            overflow="hidden"
                           >
-                            <VStack spacing={3}>
-                              <HStack spacing={4} w="full" justify="center" align="center">
-                                <Box textAlign="center">
-                                  <Text fontSize="xs" color="gray.500" mb={1}>付款人</Text>
-                                  <Text fontSize="xl" fontWeight="bold" color="gray.800">
-                                    {finalFrom}
-                                  </Text>
-                                </Box>
+                            <Box
+                              p={6}
+                              cursor="pointer"
+                              onClick={() => toggleCard(key1)}
+                              _hover={{ bg: 'gray.50' }}
+                            >
+                              <VStack spacing={3}>
+                                <HStack spacing={4} w="full" justify="center" align="center">
+                                  <Box textAlign="center">
+                                    <Text fontSize="xs" color="gray.500" mb={1}>付款人</Text>
+                                    <Text fontSize="xl" fontWeight="bold" color="gray.800">
+                                      {finalFrom}
+                                    </Text>
+                                  </Box>
 
-                                <Box>
-                                  <ArrowForwardIcon boxSize={8} color="gray.400" />
-                                </Box>
+                                  <Box>
+                                    <ArrowForwardIcon boxSize={8} color="gray.400" />
+                                  </Box>
 
-                                <Box textAlign="center">
-                                  <Text fontSize="xs" color="gray.500" mb={1}>收款人</Text>
-                                  <Text fontSize="xl" fontWeight="bold" color="gray.800">
-                                    {finalTo}
-                                  </Text>
-                                </Box>
-                              </HStack>
+                                  <Box textAlign="center">
+                                    <Text fontSize="xs" color="gray.500" mb={1}>收款人</Text>
+                                    <Text fontSize="xl" fontWeight="bold" color="gray.800">
+                                      {finalTo}
+                                    </Text>
+                                  </Box>
+                                </HStack>
 
-                              <Divider />
+                                <Divider />
 
-                              <Box textAlign="center" w="full">
-                                <Text fontSize="xs" color="gray.500" mb={1}>金額</Text>
-                                <Text fontSize="3xl" fontWeight="bold" color="blue.500">
-                                  ${fmtMoney(finalAmount)}
+                                <HStack w="full" justify="space-between">
+                                  <Box textAlign="center" flex={1}>
+                                    <Text fontSize="xs" color="gray.500" mb={1}>金額</Text>
+                                    <Text fontSize="3xl" fontWeight="bold" color="blue.500">
+                                      ${fmtMoney(finalAmount)}
+                                    </Text>
+                                  </Box>
+
+                                  <IconButton
+                                    icon={isExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                                    aria-label="展開明細"
+                                    size="sm"
+                                    variant="ghost"
+                                    colorScheme="gray"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleCard(key1);
+                                    }}
+                                  />
+                                </HStack>
+                              </VStack>
+                            </Box>
+
+                            <Collapse in={isExpanded} animateOpacity>
+                              <Box
+                                px={6}
+                                pb={6}
+                                pt={2}
+                                bg="gray.50"
+                                borderTop="1px solid"
+                                borderColor="gray.200"
+                              >
+                                <Text fontSize="xs" fontWeight="600" color="gray.600" mb={3}>
+                                  📋 明細項目
                                 </Text>
+                                <VStack spacing={2} align="stretch">
+                                  {sortedItems.map(([desc, amt], index) => (
+                                    <HStack
+                                      key={index}
+                                      justify="space-between"
+                                      fontSize="sm"
+                                      p={2}
+                                      bg="white"
+                                      borderRadius="md"
+                                    >
+                                      <Text color="gray.700">{desc}</Text>
+                                      <Text
+                                        fontWeight="600"
+                                        color={amt >= 0 ? 'green.600' : 'red.600'}
+                                      >
+                                        {amt >= 0 ? '+' : ''}${fmtMoney(amt)}
+                                      </Text>
+                                    </HStack>
+                                  ))}
+                                </VStack>
                               </Box>
-                            </VStack>
+                            </Collapse>
                           </Box>
                         );
                       }
