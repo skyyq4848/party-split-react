@@ -102,6 +102,9 @@ export default function BillParser() {
   };
 
   const handleConfirmNames = () => {
+    // 先關閉未知人名彈窗
+    setShowUnknownModal(false);
+
     // 加入選中的人員
     if (selectedNames.length > 0) {
       const addedCount = addPeople(selectedNames);
@@ -129,7 +132,6 @@ export default function BillParser() {
         });
         setDuplicateActions(initialActions);
         setPendingParseResult(result);
-        setShowUnknownModal(false);
         setShowDuplicateModal(true);
       } else {
         // 無重複，直接新增
