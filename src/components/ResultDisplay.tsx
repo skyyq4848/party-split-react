@@ -26,35 +26,73 @@ export default function ResultDisplay() {
 
     if (calcResult) {
       // 產生結果文字
-      let text = '----- 結算 -----\n';
+      let text = '═════════════════════════════════\n';
+      text += '           結 算 結 果\n';
+      text += '═════════════════════════════════\n\n';
+
+      text += '【餘額總覽】\n';
+      text += '─────────────────────────────────\n';
       for (const person in calcResult.balance) {
         const balance = calcResult.balance[person];
-        text += `${person}: ${fmtMoney(balance)}\n`;
+        const status = balance > 0 ? '💰 應收' : balance < 0 ? '💸 應付' : '✅ 已平';
+        const absBalance = Math.abs(balance);
+        if (absBalance > 0.01) { // 只顯示大於 0.01 的
+          text += `${person.padEnd(8)} ${status} $${fmtMoney(absBalance)}\n`;
+        } else {
+          text += `${person.padEnd(8)} ${status}\n`;
+        }
       }
 
-      text += '\n----- 配對結果 -----\n';
-      if (calcResult.pairLines.length > 0) {
-        calcResult.pairLines.forEach((line) => {
-          text += `${line}\n`;
-        });
-      } else {
-        text += '無配對項目\n';
+      // 定向配對明細（誰要給誰錢）
+      if (calcResult.directedMap && Object.keys(calcResult.directedMap).length > 0) {
+        text += '\n【付款明細】\n';
+        text += '─────────────────────────────────\n';
+
+        // 直接顯示原始付款關係（不做債務抵銷）
+        for (const debtor in calcResult.directedMap) {
+          for (const payer in calcResult.directedMap[debtor]) {
+            const detail = calcResult.directedMap[debtor][payer];
+
+            if (detail.total > 0.01) {
+              text += `\n${debtor} → ${payer}  共 $${fmtMoney(detail.total)}\n`;
+
+              // 合併相同品項
+              const itemMap = new Map();
+              detail.items.forEach((item) => {
+                if (Math.abs(item.amt) > 0.01) {
+                  const key = item.desc;
+                  if (itemMap.has(key)) {
+                    itemMap.set(key, itemMap.get(key) + item.amt);
+                  } else {
+                    itemMap.set(key, item.amt);
+                  }
+                }
+              });
+
+              // 顯示合併後的項目
+              let count = 0;
+              const maxItems = 15; // 增加顯示數量
+              const sortedItems = Array.from(itemMap.entries()).sort((a, b) => b[1] - a[1]);
+
+              sortedItems.forEach(([desc, amt], index) => {
+                if (count < maxItems) {
+                  const prefix = index === sortedItems.length - 1 ? '  └ ' : '  ├ ';
+                  text += `${prefix}${desc}  $${fmtMoney(amt)}\n`;
+                  count++;
+                }
+              });
+
+              if (itemMap.size > maxItems) {
+                text += `  └ ... 及其他 ${itemMap.size - maxItems} 項\n`;
+              }
+            }
+          }
+        }
       }
 
-      // 剩餘債權債務
-      if (calcResult.remainingCreditors.length > 0) {
-        text += '\n----- 剩餘債權 -----\n';
-        calcResult.remainingCreditors.forEach((c) => {
-          text += `${c.p} 尚收 ${fmtMoney(c.amt)}\n`;
-        });
-      }
 
-      if (calcResult.remainingDebtors.length > 0) {
-        text += '\n----- 剩餘債務 -----\n';
-        calcResult.remainingDebtors.forEach((d) => {
-          text += `${d.p} 尚欠 ${fmtMoney(d.amt)}\n`;
-        });
-      }
+
+      text += '\n═════════════════════════════════\n';
 
       setResultText(text);
 
@@ -193,10 +231,6 @@ export default function ResultDisplay() {
                         )
                       )}
                     </Text>
-                  </HStack>
-                  <HStack justify="space-between">
-                    <Text color="gray.600">配對數量：</Text>
-                    <Text fontWeight="600">{result.pairLines.length} 筆</Text>
                   </HStack>
                 </VStack>
               </>
