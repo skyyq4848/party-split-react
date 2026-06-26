@@ -29,7 +29,7 @@ import { useAppState } from '../hooks/useAppState';
 
 export default function BillParser() {
   const { parse, getExample, isParsing, parseError } = useBillParser();
-  const { addPeople } = useAppState();
+  const { state, addPeople } = useAppState();
   const [text, setText] = useState('');
   const toast = useToast();
 
@@ -323,6 +323,77 @@ export default function BillParser() {
     setText('');
   };
 
+  const handleExport = () => {
+    const { party, personal, advance } = state;
+
+    if (party.length === 0 && personal.length === 0 && advance.length === 0) {
+      toast({
+        title: '沒有可匯出的資料',
+        description: '請先新增費用項目',
+        status: 'warning',
+        duration: 2000,
+        isClosable: true,
+      });
+      return;
+    }
+
+    let exportText = '';
+
+    // 按分類匯出派對費用
+    const categoryMap = new Map();
+    party.forEach((item) => {
+      const cat = item.cat || '未分類';
+      if (!categoryMap.has(cat)) {
+        categoryMap.set(cat, []);
+      }
+      categoryMap.get(cat).push(item);
+    });
+
+    categoryMap.forEach((items, category) => {
+      // 如果分類名稱已經包含「費用」就不重複加，否則加上「費用」
+      const categoryName = category.includes('費用') ? category : `${category}費用`;
+      exportText += `--------------- ${categoryName} ---------------\n`;
+      items.forEach((item) => {
+        // 品項名稱已包含 $ 符號時不重複加
+        const itemText = item.item.includes('$') ? item.item : `${item.item} $${item.price}`;
+        exportText += `${itemText}\n`;
+      });
+      exportText += '\n';
+    });
+
+    // 匯出個人費用
+    if (personal.length > 0) {
+      if (exportText) exportText += '\n';
+      exportText += `--------------- 個人費用 ---------------\n`;
+      personal.forEach((item) => {
+        const itemText = item.item.includes('$') ? item.item : `${item.item} $${item.price}`;
+        exportText += `${item.person} ${itemText}\n`;
+      });
+      exportText += '\n';
+    }
+
+    // 匯出代付項目
+    if (advance.length > 0) {
+      if (exportText) exportText += '\n';
+      exportText += `--------------- 代付項目 ---------------\n`;
+      advance.forEach((item) => {
+        const itemText = item.item.includes('$') ? item.item : `${item.item} $${item.price}`;
+        exportText += `${item.person} 出 ${itemText}\n`;
+      });
+    }
+
+    // 設定到輸入框
+    setText(exportText.trim());
+
+    toast({
+      title: '匯出成功！',
+      description: '已將費用資料匯出到輸入框，可複製或重新解析',
+      status: 'success',
+      duration: 3000,
+      isClosable: true,
+    });
+  };
+
   return (
     <Box bg="white" p={6} borderRadius="lg" shadow="md">
       <VStack spacing={4} align="stretch">
@@ -346,6 +417,13 @@ export default function BillParser() {
             size="sm"
           >
             📄 載入範例
+          </Button>
+          <Button
+            colorScheme="purple"
+            onClick={handleExport}
+            size="sm"
+          >
+            📤 匯出
           </Button>
           <Button
             colorScheme="green"
