@@ -17,6 +17,19 @@ import {
   Alert,
   AlertIcon,
   useToast,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  ModalCloseButton,
+  Radio,
+  RadioGroup,
+  Stack,
+  Text,
+  Badge,
+  Divider,
 } from '@chakra-ui/react';
 import { AddIcon, DeleteIcon } from '@chakra-ui/icons';
 import { useAppState } from '../hooks/useAppState';
@@ -33,6 +46,12 @@ export default function ManualEditor() {
   const { state, replaceAllItems } = useAppState();
   const [rows, setRows] = useState<ManualRow[]>([]);
   const toast = useToast();
+
+  // 重複項目確認彈窗狀態
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateGroups, setDuplicateGroups] = useState<any[]>([]);
+  const [duplicateActions, setDuplicateActions] = useState<Record<number, string>>({});
+  const [pendingSaveData, setPendingSaveData] = useState<any>(null);
 
   // 初始化：從現有資料載入
   useEffect(() => {
@@ -200,7 +219,97 @@ export default function ManualEditor() {
       }
     });
 
-    // 批次更新
+    // 檢查重複項目
+    const duplicates = detectDuplicates({ party, personal, advance });
+
+    if (duplicates.length > 0) {
+      // 有重複項目，顯示確認彈窗
+      setDuplicateGroups(duplicates);
+      const initialActions: Record<number, string> = {};
+      duplicates.forEach((_, idx) => {
+        initialActions[idx] = 'delete'; // 預設刪除重複項
+      });
+      setDuplicateActions(initialActions);
+      setPendingSaveData({ party, personal, advance });
+      setShowDuplicateModal(true);
+    } else {
+      // 無重複，直接儲存
+      applySave({ party, personal, advance });
+    }
+  };
+
+  // 偵測重複項目
+  const detectDuplicates = (data: any) => {
+    const { party, personal, advance } = data;
+    const duplicates: any[] = [];
+
+    // 檢測派對費用重複
+    const partyMap = new Map();
+    party.forEach((item: any, idx: number) => {
+      const key = `${item.cat}-${item.item}-${item.price}`;
+      if (!partyMap.has(key)) {
+        partyMap.set(key, []);
+      }
+      partyMap.get(key).push({ type: 'party', index: idx, item });
+    });
+
+    partyMap.forEach((items) => {
+      if (items.length > 1) {
+        duplicates.push({
+          type: 'party',
+          items,
+          count: items.length,
+        });
+      }
+    });
+
+    // 檢測個人費用重複
+    const personalMap = new Map();
+    personal.forEach((item: any, idx: number) => {
+      const key = `${item.person}-${item.item}-${item.price}`;
+      if (!personalMap.has(key)) {
+        personalMap.set(key, []);
+      }
+      personalMap.get(key).push({ type: 'personal', index: idx, item });
+    });
+
+    personalMap.forEach((items) => {
+      if (items.length > 1) {
+        duplicates.push({
+          type: 'personal',
+          items,
+          count: items.length,
+        });
+      }
+    });
+
+    // 檢測代付重複
+    const advanceMap = new Map();
+    advance.forEach((item: any, idx: number) => {
+      const key = `${item.person}-${item.item}-${item.price}`;
+      if (!advanceMap.has(key)) {
+        advanceMap.set(key, []);
+      }
+      advanceMap.get(key).push({ type: 'advance', index: idx, item });
+    });
+
+    advanceMap.forEach((items) => {
+      if (items.length > 1) {
+        duplicates.push({
+          type: 'advance',
+          items,
+          count: items.length,
+        });
+      }
+    });
+
+    return duplicates;
+  };
+
+  // 套用儲存
+  const applySave = (data: any) => {
+    const { party, personal, advance } = data;
+
     replaceAllItems(party, personal, advance);
 
     toast({
@@ -210,6 +319,76 @@ export default function ManualEditor() {
       duration: 3000,
       isClosable: true,
     });
+  };
+
+  const handleDuplicateAction = (groupIdx: number, action: string) => {
+    setDuplicateActions(prev => ({
+      ...prev,
+      [groupIdx]: action
+    }));
+  };
+
+  const handleConfirmDuplicates = () => {
+    if (!pendingSaveData) return;
+
+    let { party, personal, advance } = pendingSaveData;
+    const deleteIndices = { party: new Set<number>(), personal: new Set<number>(), advance: new Set<number>() };
+
+    // 根據用戶選擇標記要刪除的項目
+    duplicateGroups.forEach((group, idx) => {
+      const action = duplicateActions[idx];
+
+      if (action === 'delete') {
+        // 刪除所有重複項（保留第一筆）
+        group.items.slice(1).forEach((item: any) => {
+          deleteIndices[item.type].add(item.index);
+        });
+      } else if (action === 'merge') {
+        // 合併：保留第一筆，刪除其他，並將第一筆的價格乘以數量
+        const firstItem = group.items[0];
+        const totalCount = group.items.length;
+
+        // 修改第一筆的價格
+        if (firstItem.type === 'party') {
+          party[firstItem.index].price *= totalCount;
+        } else if (firstItem.type === 'personal') {
+          personal[firstItem.index].price *= totalCount;
+        } else if (firstItem.type === 'advance') {
+          advance[firstItem.index].price *= totalCount;
+        }
+
+        // 刪除其他重複項
+        group.items.slice(1).forEach((item: any) => {
+          deleteIndices[item.type].add(item.index);
+        });
+      }
+      // 'keep' 則保留所有項目，不做任何處理
+    });
+
+    // 過濾掉要刪除的項目
+    const finalParty = party.filter((_: any, idx: number) => !deleteIndices.party.has(idx));
+    const finalPersonal = personal.filter((_: any, idx: number) => !deleteIndices.personal.has(idx));
+    const finalAdvance = advance.filter((_: any, idx: number) => !deleteIndices.advance.has(idx));
+
+    // 套用最終結果
+    applySave({
+      party: finalParty,
+      personal: finalPersonal,
+      advance: finalAdvance
+    });
+
+    // 關閉彈窗
+    setShowDuplicateModal(false);
+    setDuplicateGroups([]);
+    setDuplicateActions({});
+    setPendingSaveData(null);
+  };
+
+  const handleCancelDuplicates = () => {
+    setShowDuplicateModal(false);
+    setDuplicateGroups([]);
+    setDuplicateActions({});
+    setPendingSaveData(null);
   };
 
   const handleClear = () => {
@@ -363,7 +542,119 @@ export default function ManualEditor() {
           <Box>共 {rows.length} 列</Box>
           <Box>最多可新增 100 列</Box>
         </HStack>
+
+        {/* 底部操作按鈕 */}
+        <HStack>
+          <Button
+            leftIcon={<AddIcon />}
+            colorScheme="blue"
+            onClick={handleAddRow}
+            size="sm"
+          >
+            新增列
+          </Button>
+          <Button
+            colorScheme="green"
+            onClick={handleSave}
+            size="sm"
+          >
+            💾 儲存
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleClear}
+            size="sm"
+          >
+            清空
+          </Button>
+        </HStack>
       </VStack>
+
+      {/* 重複項目確認彈窗 */}
+      <Modal isOpen={showDuplicateModal} onClose={handleCancelDuplicates} size="lg">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>偵測到重複的費用項目</ModalHeader>
+          <ModalCloseButton />
+
+          <ModalBody>
+            <VStack spacing={4} align="stretch">
+              <Alert status="warning" borderRadius="md" fontSize="sm">
+                <AlertIcon />
+                發現 {duplicateGroups.length} 組重複項目，請選擇處理方式
+              </Alert>
+
+              <Divider />
+
+              <VStack spacing={4} align="stretch" maxH="400px" overflowY="auto">
+                {duplicateGroups.map((group, idx) => {
+                  const firstItem = group.items[0].item;
+                  const typeName = group.type === 'party' ? '派對費用' : group.type === 'personal' ? '個人費用' : '代付項目';
+
+                  return (
+                    <Box
+                      key={idx}
+                      p={4}
+                      borderRadius="md"
+                      border="1px"
+                      borderColor="orange.200"
+                      bg="orange.50"
+                    >
+                      <VStack align="stretch" spacing={3}>
+                        <HStack justify="space-between">
+                          <VStack align="start" spacing={0}>
+                            <Text fontWeight="600" fontSize="sm">
+                              {typeName}
+                            </Text>
+                            <Text fontSize="sm" color="gray.600">
+                              {group.type === 'party' && `${firstItem.cat} - ${firstItem.item}`}
+                              {group.type === 'personal' && `${firstItem.person} - ${firstItem.item}`}
+                              {group.type === 'advance' && `${firstItem.person} 出 ${firstItem.item}`}
+                            </Text>
+                          </VStack>
+                          <Badge colorScheme="orange" fontSize="sm">
+                            重複 {group.count} 次
+                          </Badge>
+                        </HStack>
+
+                        <Text fontSize="sm" color="gray.600">
+                          單價：${firstItem.price}　總計：${firstItem.price * group.count}
+                        </Text>
+
+                        <RadioGroup
+                          value={duplicateActions[idx] || 'delete'}
+                          onChange={(value) => handleDuplicateAction(idx, value)}
+                        >
+                          <Stack spacing={2}>
+                            <Radio value="delete" size="sm">
+                              <Text fontSize="sm">刪除重複項（僅保留第 1 筆，單價 ${firstItem.price}）</Text>
+                            </Radio>
+                            <Radio value="keep" size="sm">
+                              <Text fontSize="sm">保留所有 {group.count} 筆（不處理）</Text>
+                            </Radio>
+                            <Radio value="merge" size="sm">
+                              <Text fontSize="sm">合併為 1 筆（價格合計 ${firstItem.price * group.count}）</Text>
+                            </Radio>
+                          </Stack>
+                        </RadioGroup>
+                      </VStack>
+                    </Box>
+                  );
+                })}
+              </VStack>
+            </VStack>
+          </ModalBody>
+
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={handleCancelDuplicates}>
+              取消
+            </Button>
+            <Button colorScheme="orange" onClick={handleConfirmDuplicates}>
+              確認處理
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   );
 }
