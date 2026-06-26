@@ -156,7 +156,7 @@ export default function ExpenseTables() {
                 </Td>
                 <Td>
                   <Badge colorScheme="green" fontSize="xs">
-                    {item.members?.length || 0} 人
+                    {(item.members?.length || 0) + 1} 人
                   </Badge>
                 </Td>
                 <Td>

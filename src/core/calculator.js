@@ -136,13 +136,22 @@ export class Calculator {
   deductAdvanceShares(balance, advance, people) {
     advance.forEach(item => {
       const members = item.members && item.members.length ? item.members : people.slice();
-      const per = floor2(item.price / members.length);
 
+      // 代付人也要分攤，所以總人數 = members.length + 1（代付人）
+      const totalPeople = members.length + 1;
+      const per = floor2(item.price / totalPeople);
+
+      // 扣除其他成員的分攤
       members.forEach(member => {
         if (typeof balance[member] !== 'undefined') {
           balance[member] -= per;
         }
       });
+
+      // 扣除代付人自己的分攤
+      if (typeof balance[item.person] !== 'undefined') {
+        balance[item.person] -= per;
+      }
     });
   }
 
@@ -300,7 +309,9 @@ export class Calculator {
       if (!item || (Number(item.price) || 0) === 0) return;
 
       const members = item.members && item.members.length ? item.members : [];
-      const per = floor2(item.price / members.length);
+      // 代付人也要分攤，所以總人數 = members.length + 1
+      const totalPeople = members.length + 1;
+      const per = floor2(item.price / totalPeople);
 
       if (consolidateAdvance && primaryPayer) {
         // 合併模式
@@ -316,6 +327,7 @@ export class Calculator {
    * 代付配對 - 合併模式
    */
   matchAdvanceConsolidated(item, members, per, primaryPayer, debtors, creditors, addDirectedItem, directedMap) {
+    // 所有成員（不含主要付款人）要給主要付款人
     members.forEach(member => {
       if (member === primaryPayer) return;
 
@@ -333,26 +345,23 @@ export class Calculator {
       }
     });
 
+    // 代付人自己也要分攤
+    if (item.person !== primaryPayer) {
+      addDirectedItem(item.person, primaryPayer, item.item || '(代出費用-自己分攤)', per, 'advance');
+    }
+
     // 處理代付者補償
     if (item.person && item.person !== primaryPayer) {
       const paidAmt = Number(item.price) || 0;
       const debtor = item.person;
       const payer = primaryPayer;
 
-      if (directedMap[debtor] && directedMap[debtor][payer]) {
-        directedMap[debtor][payer].total -= paidAmt;
-        directedMap[debtor][payer].items.push({ desc: '(代出抵扣)', amt: -paidAmt, type: 'advance' });
+      // 代付人要從主要付款人那裡收回代墊的錢
+      if (!directedMap[payer]) directedMap[payer] = {};
+      if (!directedMap[payer][debtor]) directedMap[payer][debtor] = { items: [], total: 0 };
 
-        if (directedMap[debtor][payer].total <= 0) {
-          const surplus = -directedMap[debtor][payer].total;
-          delete directedMap[debtor][payer];
-
-          if (!directedMap[payer]) directedMap[payer] = {};
-          if (!directedMap[payer][debtor]) directedMap[payer][debtor] = { items: [], total: 0 };
-          directedMap[payer][debtor].items.push({ desc: item.item + ' (代出補償)', amt: surplus, type: 'advance' });
-          directedMap[payer][debtor].total += surplus;
-        }
-      }
+      directedMap[payer][debtor].items.push({ desc: item.item + ' (代出補償)', amt: paidAmt, type: 'advance' });
+      directedMap[payer][debtor].total += paidAmt;
     }
   }
 
@@ -360,6 +369,7 @@ export class Calculator {
    * 代付配對 - 原始模式
    */
   matchAdvanceNormal(item, members, per, debtors, creditors, addDirectedItem) {
+    // 所有成員（不含代付人）要還給代付人
     members.forEach(member => {
       if (member === item.person) return;
 
@@ -377,6 +387,10 @@ export class Calculator {
         creditorObj.amt -= pay;
       }
     });
+
+    // 代付人自己也要分攤（還給自己，所以會抵銷部分）
+    // 這部分在 deductAdvanceShares 已經扣除，這裡只需要記錄配對關係
+    addDirectedItem(item.person, item.person, item.item || '(代出費用-自己分攤)', per, 'advance');
   }
 
   /**

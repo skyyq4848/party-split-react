@@ -43,41 +43,78 @@ export default function ResultDisplay() {
         }
       }
 
-      // 定向配對明細（誰要給誰錢）
+      // 定向配對明細（誰要給誰錢）- 債務整合
       if (calcResult.directedMap && Object.keys(calcResult.directedMap).length > 0) {
         text += '\n【付款明細】\n';
         text += '─────────────────────────────────\n';
 
-        // 直接顯示原始付款關係（不做債務抵銷）
+        // 建立淨額對照表並整合明細
+        const processed = new Set();
+
         for (const debtor in calcResult.directedMap) {
           for (const payer in calcResult.directedMap[debtor]) {
-            const detail = calcResult.directedMap[debtor][payer];
+            const key1 = `${debtor}->${payer}`;
+            const key2 = `${payer}->${debtor}`;
 
-            if (detail.total > 0.01) {
-              text += `\n${debtor} → ${payer}  共 $${fmtMoney(detail.total)}\n`;
+            if (processed.has(key1) || processed.has(key2)) continue;
 
-              // 合併相同品項
+            const detail1 = calcResult.directedMap[debtor]?.[payer];
+            const detail2 = calcResult.directedMap[payer]?.[debtor];
+            const amount1 = detail1?.total || 0;
+            const amount2 = detail2?.total || 0;
+
+            // 計算淨額
+            const netAmount = amount1 - amount2;
+
+            if (Math.abs(netAmount) > 0.01) {
+              const finalFrom = netAmount > 0 ? debtor : payer;
+              const finalTo = netAmount > 0 ? payer : debtor;
+              const finalAmount = Math.abs(netAmount);
+
+              text += `\n${finalFrom} → ${finalTo}  淨額 $${fmtMoney(finalAmount)}\n`;
+
+              // 合併雙方的所有項目
               const itemMap = new Map();
-              detail.items.forEach((item) => {
-                if (Math.abs(item.amt) > 0.01) {
-                  const key = item.desc;
-                  if (itemMap.has(key)) {
-                    itemMap.set(key, itemMap.get(key) + item.amt);
-                  } else {
-                    itemMap.set(key, item.amt);
-                  }
-                }
-              });
 
-              // 顯示合併後的項目
+              // 加入第一方的項目（正數）
+              if (detail1?.items) {
+                detail1.items.forEach((item) => {
+                  if (Math.abs(item.amt) > 0.01) {
+                    const key = item.desc;
+                    if (itemMap.has(key)) {
+                      itemMap.set(key, itemMap.get(key) + item.amt);
+                    } else {
+                      itemMap.set(key, item.amt);
+                    }
+                  }
+                });
+              }
+
+              // 加入第二方的項目（負數 - 抵扣）
+              if (detail2?.items) {
+                detail2.items.forEach((item) => {
+                  if (Math.abs(item.amt) > 0.01) {
+                    const key = `${item.desc} (抵扣)`;
+                    const amt = -item.amt;
+                    if (itemMap.has(key)) {
+                      itemMap.set(key, itemMap.get(key) + amt);
+                    } else {
+                      itemMap.set(key, amt);
+                    }
+                  }
+                });
+              }
+
+              // 顯示整合後的項目（按金額排序）
               let count = 0;
-              const maxItems = 15; // 增加顯示數量
-              const sortedItems = Array.from(itemMap.entries()).sort((a, b) => b[1] - a[1]);
+              const maxItems = 20;
+              const sortedItems = Array.from(itemMap.entries()).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
 
               sortedItems.forEach(([desc, amt], index) => {
-                if (count < maxItems) {
+                if (count < maxItems && Math.abs(amt) > 0.01) {
                   const prefix = index === sortedItems.length - 1 ? '  └ ' : '  ├ ';
-                  text += `${prefix}${desc}  $${fmtMoney(amt)}\n`;
+                  const sign = amt >= 0 ? '+' : '';
+                  text += `${prefix}${desc}  ${sign}$${fmtMoney(amt)}\n`;
                   count++;
                 }
               });
@@ -86,6 +123,9 @@ export default function ResultDisplay() {
                 text += `  └ ... 及其他 ${itemMap.size - maxItems} 項\n`;
               }
             }
+
+            processed.add(key1);
+            processed.add(key2);
           }
         }
       }
